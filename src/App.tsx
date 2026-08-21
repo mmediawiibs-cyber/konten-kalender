@@ -117,23 +117,68 @@ export default function App() {
   const [editingMaster, setEditingMaster] = useState(null);
   const [editMasterVal, setEditMasterVal] = useState("");
 
+  // --- FIREBASE SYNC (REAL-TIME) ---
   useEffect(() => {
-    // Simulasi Fetch dari Firebase (menggunakan localStorage untuk purwarupa)
-    const savedContents = localStorage.getItem("hq_contents");
-    const savedMaster = localStorage.getItem("hq_masterData");
-    const savedNotes = localStorage.getItem("hq_monthNotes");
+    // 1. Sync Data Konten secara Real-Time
+    const unsubContent = onSnapshot(
+      collection(db, "contentItems"),
+      (snapshot) => {
+        const items: any[] = [];
+        snapshot.forEach((doc) => {
+          items.push({ id: doc.id, ...doc.data() });
+        });
+        setContents(items.sort((a, b) => b.createdAt - a.createdAt));
+      },
+    );
 
-    if (savedContents) setContents(JSON.parse(savedContents));
-    if (savedMaster) setMasterData(JSON.parse(savedMaster));
-    if (savedNotes) setMonthNotes(JSON.parse(savedNotes));
+    // 2. Sync Master Data
+    const unsubMaster = onSnapshot(
+      doc(db, "settings", "masterData"),
+      (docSnap) => {
+        if (docSnap.exists()) {
+          setMasterData(docSnap.data() as any);
+        } else {
+          setDoc(doc(db, "settings", "masterData"), initialMasterData);
+        }
+      },
+    );
+
+    // 3. Sync Catatan Bulanan
+    const unsubNotes = onSnapshot(
+      doc(db, "settings", "monthNotes"),
+      (docSnap) => {
+        if (docSnap.exists()) {
+          setMonthNotes(docSnap.data());
+        }
+      },
+    );
+
+    return () => {
+      unsubContent();
+      unsubMaster();
+      unsubNotes();
+    };
   }, []);
 
-  useEffect(() => {
-    // Simulasi Save ke Firebase
-    localStorage.setItem("hq_contents", JSON.stringify(contents));
-    localStorage.setItem("hq_masterData", JSON.stringify(masterData));
-    localStorage.setItem("hq_monthNotes", JSON.stringify(monthNotes));
-  }, [contents, masterData, monthNotes]);
+  // --- CRUD HANDLERS UNTUK FIREBASE ---
+  const handleSaveContent = async (content: any) => {
+    const itemToSave = {
+      ...content,
+      id: content.id || Date.now().toString(),
+      createdAt: content.createdAt || Date.now(),
+      updatedAt: Date.now(),
+    };
+    await setDoc(doc(db, "contentItems", itemToSave.id), itemToSave);
+    setIsModalOpen(false);
+    setEditingContent({});
+  };
+
+  const handleDeleteContent = async (id: string) => {
+    if (confirm("Apakah Anda yakin ingin menghapus konten ini?")) {
+      await deleteDoc(doc(db, "contentItems", id));
+      setIsModalOpen(false);
+    }
+  };
 
   const handleSaveContent = (content) => {
     if (content.id) {
