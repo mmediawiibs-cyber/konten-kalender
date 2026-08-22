@@ -6,14 +6,6 @@ import {
   deleteDoc,
   onSnapshot,
 } from "firebase/firestore";
-import { db } from "./firebase";
-import {
-  collection,
-  doc,
-  setDoc,
-  deleteDoc,
-  onSnapshot,
-} from "firebase/firestore";
 import React, { useState, useEffect } from "react";
 import {
   Calendar,
