@@ -95,11 +95,11 @@ const monthNames = [
 const getWeekLabel = (currentDate, today) => {
   const c = new Date(currentDate);
   c.setHours(0, 0, 0, 0);
-  c.setDate(c.getDate() - c.getDay()); // Ambil awal pekan (Minggu) dari currentDate
+  c.setDate(c.getDate() - c.getDay());
 
   const t = new Date(today);
   t.setHours(0, 0, 0, 0);
-  t.setDate(t.getDate() - t.getDay()); // Ambil awal pekan (Minggu) dari hari ini
+  t.setDate(t.getDate() - t.getDay());
 
   const diff = Math.round(
     (c.getTime() - t.getTime()) / (1000 * 60 * 60 * 24 * 7),
@@ -127,7 +127,6 @@ export default function App() {
 
   // --- FIREBASE SYNC (REAL-TIME) ---
   useEffect(() => {
-    // 1. Sync Data Konten secara Real-Time
     const unsubContent = onSnapshot(
       collection(db, "contentItems"),
       (snapshot) => {
@@ -139,7 +138,6 @@ export default function App() {
       },
     );
 
-    // 2. Sync Master Data
     const unsubMaster = onSnapshot(
       doc(db, "settings", "masterData"),
       (docSnap) => {
@@ -151,7 +149,6 @@ export default function App() {
       },
     );
 
-    // 3. Sync Catatan Bulanan
     const unsubNotes = onSnapshot(
       doc(db, "settings", "monthNotes"),
       (docSnap) => {
@@ -168,11 +165,12 @@ export default function App() {
     };
   }, []);
 
-  // --- CRUD HANDLERS UNTUK FIREBASE ---
+  // --- CRUD HANDLERS (FIREBASE) ---
   const handleSaveContent = async (content: any) => {
     const itemToSave = {
       ...content,
       id: content.id || Date.now().toString(),
+      title: content.title || "Untitled",
       createdAt: content.createdAt || Date.now(),
       updatedAt: Date.now(),
     };
@@ -188,31 +186,7 @@ export default function App() {
     }
   };
 
-  const handleSaveContent = (content) => {
-    if (content.id) {
-      setContents(
-        contents.map((c) =>
-          c.id === content.id ? { ...content, updatedAt: Date.now() } : c,
-        ),
-      );
-    } else {
-      setContents([
-        ...contents,
-        { ...content, id: Date.now().toString(), createdAt: Date.now() },
-      ]);
-    }
-    setIsModalOpen(false);
-    setEditingContent({});
-  };
-
-  const handleDeleteContent = (id) => {
-    if (confirm("Apakah Anda yakin ingin menghapus konten ini?")) {
-      setContents(contents.filter((c) => c.id !== id));
-      setIsModalOpen(false);
-    }
-  };
-
-  const handleDuplicateContent = (content) => {
+  const handleDuplicateContent = async (content) => {
     const newContent = {
       ...content,
       id: Date.now().toString(),
@@ -220,7 +194,7 @@ export default function App() {
       createdAt: Date.now(),
       updatedAt: Date.now(),
     };
-    setContents([...contents, newContent]);
+    await setDoc(doc(db, "contentItems", newContent.id), newContent);
   };
 
   const onDragStart = (e, id) => {
@@ -231,23 +205,19 @@ export default function App() {
     e.preventDefault();
   };
 
-  const onDrop = (e, dateStr, statusTarget = null) => {
+  const onDrop = async (e, dateStr, statusTarget = null) => {
     e.preventDefault();
     const id = e.dataTransfer.getData("contentId");
-    setContents(
-      contents.map((c) => {
-        if (c.id === id) {
-          let newC = { ...c };
-          if (dateStr !== null) newC.scheduledDate = dateStr;
-          if (statusTarget) {
-            newC.status = statusTarget;
-            if (statusTarget === "draft" && !dateStr) newC.scheduledDate = null;
-          }
-          return newC;
-        }
-        return c;
-      }),
-    );
+    const targetItem = contents.find((c) => c.id === id);
+    if (!targetItem) return;
+
+    let updated = { ...targetItem };
+    if (dateStr !== null) updated.scheduledDate = dateStr;
+    if (statusTarget) {
+      updated.status = statusTarget;
+      if (statusTarget === "draft" && !dateStr) updated.scheduledDate = null;
+    }
+    await setDoc(doc(db, "contentItems", id), updated);
   };
 
   const prevTime = () => {
@@ -266,36 +236,45 @@ export default function App() {
     setCurrentDate(newDate);
   };
 
-  const addMasterData = (catId, value) => {
+  const addMasterData = async (catId, value) => {
     const val = value.trim();
     if (!val) return;
-    const newItem = { id: Date.now().toString(), name: val };
+    const newItem: any = { id: Date.now().toString(), name: val };
     if (catId === "pillar")
-      newItem.color = "#" + Math.floor(Math.random() * 16777215).toString(16); // Random color
-    setMasterData({ ...masterData, [catId]: [...masterData[catId], newItem] });
+      newItem.color = "#" + Math.floor(Math.random() * 16777215).toString(16);
+
+    const newMaster = {
+      ...masterData,
+      [catId]: [...masterData[catId], newItem],
+    };
+    setMasterData(newMaster);
+    await setDoc(doc(db, "settings", "masterData"), newMaster);
   };
 
-  const deleteMasterData = (catId, itemId) => {
+  const deleteMasterData = async (catId, itemId) => {
     if (confirm("Hapus data ini?")) {
-      setMasterData({
+      const newMaster = {
         ...masterData,
         [catId]: masterData[catId].filter((item) => item.id !== itemId),
-      });
+      };
+      setMasterData(newMaster);
+      await setDoc(doc(db, "settings", "masterData"), newMaster);
     }
   };
 
-  const saveEditMasterData = (catId, itemId) => {
-    setMasterData({
+  const saveEditMasterData = async (catId, itemId) => {
+    const newMaster = {
       ...masterData,
       [catId]: masterData[catId].map((item) =>
         item.id === itemId ? { ...item, name: editMasterVal } : item,
       ),
-    });
+    };
+    setMasterData(newMaster);
+    await setDoc(doc(db, "settings", "masterData"), newMaster);
     setEditingMaster(null);
   };
 
   const renderCard = (c, compact = false) => {
-    const isCompleted = c.status === "selesai";
     const pillarData = c.pillarIds?.[0]
       ? masterData.pillar.find((p) => p.id === c.pillarIds[0])
       : null;
@@ -461,9 +440,7 @@ export default function App() {
 
   return (
     <div className="flex h-screen bg-slate-50 font-sans text-slate-800 overflow-hidden selection:bg-[#c79d3a] selection:text-[#011f3f]">
-      {/* SIDEBAR NAVIGATION & WORKFLOW */}
       <div className="w-[360px] bg-white border-r border-slate-200 flex flex-col z-20 shadow-2xl flex-shrink-0">
-        {/* Brand Area */}
         <div className="p-6 pb-6 bg-[#011f3f] text-white shadow-lg relative overflow-hidden">
           <div className="absolute top-0 right-0 w-32 h-32 bg-white/5 rounded-full blur-2xl -mr-10 -mt-10 pointer-events-none"></div>
           <h1 className="text-2xl font-black tracking-tight flex items-center gap-3 mb-8 px-2 relative z-10">
@@ -501,10 +478,8 @@ export default function App() {
           </nav>
         </div>
 
-        {/* Workflow Containers (Only show in Calendar tab) */}
         {activeTab === "calendar" && (
           <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-50/50">
-            {/* Draft / Backlog */}
             <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
               <h3 className="font-bold text-slate-700 mb-3 flex items-center gap-2">
                 <div className="w-2 h-2 rounded-full bg-slate-400"></div> Ide
@@ -533,7 +508,6 @@ export default function App() {
               </button>
             </div>
 
-            {/* Scheduled / In Progress */}
             <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200 border-l-4 border-l-orange-400">
               <h3 className="font-bold text-slate-700 mb-3 flex items-center gap-2">
                 <div className="w-2 h-2 rounded-full bg-orange-400"></div>{" "}
@@ -557,7 +531,6 @@ export default function App() {
               </div>
             </div>
 
-            {/* Completed */}
             <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200 border-l-4 border-l-green-500">
               <h3 className="font-bold text-slate-700 mb-3 flex items-center gap-2">
                 <div className="w-2 h-2 rounded-full bg-green-500"></div>{" "}
@@ -580,9 +553,7 @@ export default function App() {
         )}
       </div>
 
-      {/* MAIN CONTENT AREA */}
       <div className="flex-1 flex flex-col min-w-0 bg-slate-50 relative">
-        {/* Topbar */}
         <div className="h-20 bg-white border-b border-slate-200 flex items-center justify-between px-8 shrink-0 z-10 shadow-sm">
           {activeTab === "calendar" && (
             <div className="flex items-center gap-6 w-full">
@@ -629,7 +600,6 @@ export default function App() {
           )}
         </div>
 
-        {/* TAB 1: CALENDAR VIEW */}
         {activeTab === "calendar" && (
           <div className="flex-1 overflow-y-auto p-6 bg-slate-50/80">
             {calendarView === "semester" ? (
@@ -643,7 +613,7 @@ export default function App() {
 
                   return semesterMonths.map((m) => {
                     const monthContents = contents.filter(
-                      (c) =>
+                      (c: any) =>
                         c.scheduledDate &&
                         new Date(c.scheduledDate).getMonth() === m &&
                         new Date(c.scheduledDate).getFullYear() === year,
@@ -690,7 +660,6 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* Catatan Bulan Ini */}
                 {calendarView === "month" && (
                   <div className="bg-white rounded-3xl shadow-sm border border-slate-200 p-6 shrink-0 mb-10">
                     <h3 className="font-bold text-[#011f3f] mb-3 flex items-center gap-2">
@@ -707,13 +676,18 @@ export default function App() {
                           `${currentDate.getFullYear()}-${currentDate.getMonth()}`
                         ] || ""
                       }
-                      onChange={(e) =>
-                        setMonthNotes({
+                      onChange={async (e) => {
+                        const newNotes = {
                           ...monthNotes,
                           [`${currentDate.getFullYear()}-${currentDate.getMonth()}`]:
                             e.target.value,
-                        })
-                      }
+                        };
+                        setMonthNotes(newNotes);
+                        await setDoc(
+                          doc(db, "settings", "monthNotes"),
+                          newNotes,
+                        );
+                      }}
                     />
                   </div>
                 )}
@@ -722,17 +696,17 @@ export default function App() {
           </div>
         )}
 
-        {/* TAB 2: PROGRESS ANALYTICS */}
         {activeTab === "progress" &&
           (() => {
             const stats = {
               total: contents.length,
-              selesai: contents.filter((c) => c.status === "selesai").length,
+              selesai: contents.filter((c: any) => c.status === "selesai")
+                .length,
               tertunda: contents.filter(
-                (c) => c.status === "tunda" || c.status === "batal",
+                (c: any) => c.status === "tunda" || c.status === "batal",
               ).length,
               upcoming: contents.filter(
-                (c) =>
+                (c: any) =>
                   c.scheduledDate &&
                   new Date(c.scheduledDate) >= new Date() &&
                   c.status !== "selesai",
@@ -818,21 +792,21 @@ export default function App() {
                       </div>
                       <div className="p-6 bg-slate-50/50">
                         {(() => {
-                          let filteredList = [];
+                          let filteredList: any[] = [];
                           if (progressDetailFilter === "total")
                             filteredList = contents;
                           if (progressDetailFilter === "selesai")
                             filteredList = contents.filter(
-                              (c) => c.status === "selesai",
+                              (c: any) => c.status === "selesai",
                             );
                           if (progressDetailFilter === "tertunda")
                             filteredList = contents.filter(
-                              (c) =>
+                              (c: any) =>
                                 c.status === "tunda" || c.status === "batal",
                             );
                           if (progressDetailFilter === "upcoming")
                             filteredList = contents.filter(
-                              (c) =>
+                              (c: any) =>
                                 c.scheduledDate &&
                                 new Date(c.scheduledDate) >= new Date() &&
                                 c.status !== "selesai",
@@ -859,7 +833,6 @@ export default function App() {
             );
           })()}
 
-        {/* TAB 3: MASTER DATA */}
         {activeTab === "master" && (
           <div className="flex-1 p-8 overflow-y-auto bg-slate-50">
             <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
@@ -876,7 +849,7 @@ export default function App() {
                   </h3>
 
                   <div className="flex-1 overflow-y-auto space-y-2 pr-2 mb-4 custom-scrollbar">
-                    {masterData[cat.id]?.map((item) => (
+                    {masterData[cat.id]?.map((item: any) => (
                       <div
                         key={item.id}
                         className="group flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100 hover:border-[#c79d3a]/50 hover:bg-[#c79d3a]/5 transition-colors"
@@ -949,7 +922,7 @@ export default function App() {
                   </div>
 
                   <form
-                    onSubmit={(e) => {
+                    onSubmit={(e: any) => {
                       e.preventDefault();
                       addMasterData(cat.id, e.target.elements.newItem.value);
                       e.target.reset();
@@ -976,7 +949,6 @@ export default function App() {
         )}
       </div>
 
-      {}
       {isModalOpen && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-white w-full max-w-3xl rounded-[2.5rem] shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
@@ -985,12 +957,16 @@ export default function App() {
                 <div className="bg-white/10 p-2 rounded-xl backdrop-blur-sm text-[#c79d3a]">
                   <LayoutDashboard className="w-6 h-6" />
                 </div>
-                {editingContent?.id ? "Edit Konten" : "Ide Konten Baru"}
+                {(editingContent as any)?.id
+                  ? "Edit Konten"
+                  : "Ide Konten Baru"}
               </h2>
               <div className="flex gap-3">
-                {editingContent?.id && (
+                {(editingContent as any)?.id && (
                   <button
-                    onClick={() => handleDeleteContent(editingContent.id)}
+                    onClick={() =>
+                      handleDeleteContent((editingContent as any).id)
+                    }
                     className="p-2 text-white/70 hover:text-red-400 bg-white/10 hover:bg-white/20 rounded-xl transition-all"
                   >
                     <Trash2 className="w-5 h-5" />
@@ -1006,7 +982,6 @@ export default function App() {
             </div>
 
             <div className="p-8 overflow-y-auto flex-1 space-y-8 bg-slate-50/50">
-              {/* Row 1: Title */}
               <div>
                 <label className="block text-sm font-black text-[#011f3f] uppercase tracking-wider mb-2">
                   Judul Konten
@@ -1015,7 +990,7 @@ export default function App() {
                   type="text"
                   className="w-full bg-white border border-slate-300 rounded-2xl px-5 py-4 focus:outline-none focus:ring-2 focus:ring-[#c79d3a] focus:border-transparent font-bold text-lg text-slate-800 shadow-sm"
                   placeholder="Contoh: Tips Membuat Kopi Susu Gula Aren"
-                  value={editingContent?.title || ""}
+                  value={(editingContent as any)?.title || ""}
                   onChange={(e) =>
                     setEditingContent({
                       ...editingContent,
@@ -1025,7 +1000,6 @@ export default function App() {
                 />
               </div>
 
-              {/* Row 1.5: Reference Link */}
               <div>
                 <label className="flex items-center gap-2 text-sm font-black text-[#011f3f] uppercase tracking-wider mb-2">
                   <Link2 className="w-4 h-4 text-[#c79d3a]" /> Link Referensi
@@ -1034,7 +1008,7 @@ export default function App() {
                   type="url"
                   className="w-full bg-white border border-slate-300 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-[#c79d3a] font-medium text-slate-700 shadow-sm placeholder:text-slate-300"
                   placeholder="Contoh: https://tiktok.com/@referensi_ide_konten"
-                  value={editingContent?.referenceLink || ""}
+                  value={(editingContent as any)?.referenceLink || ""}
                   onChange={(e) =>
                     setEditingContent({
                       ...editingContent,
@@ -1044,8 +1018,7 @@ export default function App() {
                 />
               </div>
 
-              {/* Conditional Row: Live Link (Dipindahkan ke atas Status) */}
-              {editingContent?.status === "selesai" && (
+              {(editingContent as any)?.status === "selesai" && (
                 <div className="animate-in fade-in slide-in-from-top-4 duration-500">
                   <label className="block text-sm font-black text-green-600 uppercase tracking-wider mb-2">
                     Link Source / Live URL
@@ -1054,7 +1027,7 @@ export default function App() {
                     type="url"
                     className="w-full bg-green-50 border-2 border-green-200 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-green-500 text-sm text-green-800 font-bold shadow-sm"
                     placeholder="Masukkan URL postingan yang sudah tayang..."
-                    value={editingContent?.liveUrl || ""}
+                    value={(editingContent as any)?.liveUrl || ""}
                     onChange={(e) =>
                       setEditingContent({
                         ...editingContent,
@@ -1065,7 +1038,6 @@ export default function App() {
                 </div>
               )}
 
-              {/* Row 2: Date & Status */}
               <div className="grid grid-cols-2 gap-6">
                 <div>
                   <label className="block text-sm font-black text-[#011f3f] uppercase tracking-wider mb-2">
@@ -1074,7 +1046,7 @@ export default function App() {
                   <input
                     type="date"
                     className="w-full bg-white border border-slate-300 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-[#c79d3a] font-medium text-slate-700 shadow-sm"
-                    value={editingContent?.scheduledDate || ""}
+                    value={(editingContent as any)?.scheduledDate || ""}
                     onChange={(e) =>
                       setEditingContent({
                         ...editingContent,
@@ -1089,7 +1061,7 @@ export default function App() {
                   </label>
                   <select
                     className="w-full bg-white border border-slate-300 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-[#c79d3a] font-bold text-slate-700 shadow-sm"
-                    value={editingContent?.status || "draft"}
+                    value={(editingContent as any)?.status || "draft"}
                     onChange={(e) =>
                       setEditingContent({
                         ...editingContent,
@@ -1106,7 +1078,6 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Row 3: Dynamic Selections (Multi-Select Pills) */}
               <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
                 <h3 className="text-sm font-black text-[#011f3f] uppercase tracking-wider mb-4 border-b border-slate-100 pb-2">
                   Kebutuhan Spesifik
@@ -1118,18 +1089,21 @@ export default function App() {
                         {cat.icon} {cat.title}
                       </label>
                       <div className="flex flex-wrap gap-2">
-                        {masterData[cat.id]?.map((item) => {
+                        {masterData[cat.id]?.map((item: any) => {
                           const isSelected = (
-                            editingContent?.[`${cat.id}Ids`] || []
+                            (editingContent as any)?.[`${cat.id}Ids`] || []
                           ).includes(item.id);
                           return (
                             <button
                               key={item.id}
                               onClick={() => {
                                 const currentIds =
-                                  editingContent?.[`${cat.id}Ids`] || [];
+                                  (editingContent as any)?.[`${cat.id}Ids`] ||
+                                  [];
                                 const newIds = isSelected
-                                  ? currentIds.filter((id) => id !== item.id)
+                                  ? currentIds.filter(
+                                      (id: string) => id !== item.id,
+                                    )
                                   : [...currentIds, item.id];
                                 setEditingContent({
                                   ...editingContent,
@@ -1157,7 +1131,6 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Row 4: Script Area */}
               <div>
                 <label className="block text-sm font-black text-[#011f3f] uppercase tracking-wider mb-2">
                   Script / Caption
@@ -1165,7 +1138,7 @@ export default function App() {
                 <textarea
                   className="w-full bg-white border border-slate-300 rounded-2xl p-5 focus:outline-none focus:ring-2 focus:ring-[#c79d3a] min-h-[150px] text-sm leading-relaxed font-medium shadow-sm placeholder:text-slate-300"
                   placeholder="Tulis script video atau caption postingan secara detail di sini..."
-                  value={editingContent?.script || ""}
+                  value={(editingContent as any)?.script || ""}
                   onChange={(e) =>
                     setEditingContent({
                       ...editingContent,
@@ -1175,7 +1148,6 @@ export default function App() {
                 />
               </div>
 
-              {/* Row 5: Notes */}
               <div>
                 <label className="block text-sm font-black text-[#011f3f] uppercase tracking-wider mb-2">
                   Catatan Tambahan (Notes)
@@ -1183,7 +1155,7 @@ export default function App() {
                 <textarea
                   className="w-full bg-white border border-slate-300 rounded-2xl p-5 focus:outline-none focus:ring-2 focus:ring-[#c79d3a] min-h-[100px] text-sm leading-relaxed font-medium shadow-sm placeholder:text-slate-300"
                   placeholder="Catatan untuk editor, detail properti, atau arahan khusus talent..."
-                  value={editingContent?.notes || ""}
+                  value={(editingContent as any)?.notes || ""}
                   onChange={(e) =>
                     setEditingContent({
                       ...editingContent,
@@ -1194,7 +1166,6 @@ export default function App() {
               </div>
             </div>
 
-            {/* Footer Buttons */}
             <div className="p-6 bg-white border-t border-slate-100 flex justify-end gap-4 shrink-0">
               <button
                 onClick={() => setIsModalOpen(false)}
