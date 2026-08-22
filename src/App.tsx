@@ -7,31 +7,7 @@ import {
   onSnapshot,
 } from "firebase/firestore";
 import React, { useState, useEffect } from "react";
-import {
-  Calendar,
-  AlignLeft,
-  Database,
-  Plus,
-  Trash2,
-  X,
-  CheckCircle,
-  Clock,
-  AlertCircle,
-  LayoutDashboard,
-  Briefcase,
-  Camera,
-  MapPin,
-  Cpu,
-  Monitor,
-  User,
-  ChevronLeft,
-  ChevronRight,
-  Edit2,
-  Check,
-  Copy,
-  Link2,
-  ExternalLink,
-} from "lucide-react";
+// ... (lanjutan kode lainnya)
 
 const initialMasterData = {
   talent: [
