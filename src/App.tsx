@@ -31,6 +31,8 @@ import {
   Copy,
   Link2,
   ExternalLink,
+  Image as ImageIcon,
+  UploadCloud,
 } from "lucide-react";
 
 const initialMasterData = {
@@ -125,7 +127,8 @@ export default function App() {
   const [editingMaster, setEditingMaster] = useState<any>(null);
   const [editMasterVal, setEditMasterVal] = useState("");
 
-  // --- 1. FIREBASE SYNC MENGGANTIKAN LOCALSTORAGE ---
+  const [viewingContent, setViewingContent] = useState<any>(null);
+
   useEffect(() => {
     const unsubContent = onSnapshot(
       collection(db, "contentItems"),
@@ -165,7 +168,44 @@ export default function App() {
     };
   }, []);
 
-  // --- 2. FUNGSI CRUD TERHUBUNG KE FIREBASE ---
+  // FUNGSI KOMPRESI & UPLOAD GAMBAR
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event: any) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        let width = img.width;
+        let height = img.height;
+        const MAX_DIMENSION = 800; // Kompresi agar database tidak berat
+
+        if (width > height && width > MAX_DIMENSION) {
+          height *= MAX_DIMENSION / width;
+          width = MAX_DIMENSION;
+        } else if (height > MAX_DIMENSION) {
+          width *= MAX_DIMENSION / height;
+          height = MAX_DIMENSION;
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        ctx?.drawImage(img, 0, 0, width, height);
+
+        const compressedBase64 = canvas.toDataURL("image/jpeg", 0.7);
+        setEditingContent((prev: any) => ({
+          ...prev,
+          imageUrl: compressedBase64,
+        }));
+      };
+      img.src = event.target.result;
+    };
+    reader.readAsDataURL(file);
+  };
+
   const handleSaveContent = async (content: any) => {
     const itemToSave = {
       ...content,
@@ -277,9 +317,7 @@ export default function App() {
     setEditingMaster(null);
   };
 
-  // --- 3. UI TAMPILAN (PERSIS SAMA DENGAN KODE ASLI) ---
   const renderCard = (c: any, compact = false) => {
-    const isCompleted = c.status === "selesai";
     const pillarData = c.pillarIds?.[0]
       ? masterData.pillar.find((p: any) => p.id === c.pillarIds[0])
       : null;
@@ -290,23 +328,36 @@ export default function App() {
         key={c.id}
         draggable
         onDragStart={(e) => onDragStart(e, c.id)}
+        onClick={() => setViewingContent(c)}
         style={{ borderLeftColor: cardBorderColor, borderLeftWidth: "4px" }}
-        className={`bg-white rounded-xl shadow-sm border border-slate-200 p-3 cursor-grab active:cursor-grabbing hover:shadow-md transition-all group ${compact ? "text-xs" : "text-sm"} relative overflow-hidden`}
+        className={`bg-white rounded-xl shadow-sm border border-slate-200 p-3 cursor-pointer active:cursor-grabbing hover:shadow-md transition-all group ${compact ? "text-xs" : "text-sm"} relative overflow-hidden`}
       >
         <div className="flex justify-between items-start mb-1">
-          <h4 className="font-bold text-[#011f3f] truncate pr-12">
+          <h4 className="font-bold text-[#011f3f] truncate pr-12 flex items-center gap-1.5">
             {c.title || "Untitled"}
+            {c.imageUrl && (
+              <ImageIcon
+                className="w-3.5 h-3.5 text-blue-500 shrink-0"
+                title="Ada Gambar Referensi"
+              />
+            )}
           </h4>
           <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-all bg-white shadow-sm rounded-md border border-slate-100">
             <button
-              onClick={() => handleDuplicateContent(c)}
+              onClick={(e) => {
+                e.stopPropagation();
+                handleDuplicateContent(c);
+              }}
               className="p-1 text-slate-400 hover:text-[#c79d3a] hover:bg-slate-50 rounded transition-colors"
               title="Duplikat Konten"
             >
               <Copy className="w-3 h-3" />
             </button>
             <button
-              onClick={() => handleDeleteContent(c.id)}
+              onClick={(e) => {
+                e.stopPropagation();
+                handleDeleteContent(c.id);
+              }}
               className="p-1 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded transition-colors"
               title="Hapus Konten"
             >
@@ -345,6 +396,7 @@ export default function App() {
                   href={c.liveUrl}
                   target="_blank"
                   rel="noopener noreferrer"
+                  onClick={(e) => e.stopPropagation()}
                   className="text-green-600 hover:text-green-800 transition-colors"
                   title="Buka Link Postingan Live"
                 >
@@ -352,7 +404,8 @@ export default function App() {
                 </a>
               )}
               <button
-                onClick={() => {
+                onClick={(e) => {
+                  e.stopPropagation();
                   setEditingContent(c);
                   setIsModalOpen(true);
                 }}
@@ -485,10 +538,9 @@ export default function App() {
           </nav>
         </div>
 
-        {/* Workflow Containers (Only show in Calendar tab) */}
+        {/* Workflow Containers */}
         {activeTab === "calendar" && (
           <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-50/50">
-            {/* Draft / Backlog */}
             <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
               <h3 className="font-bold text-slate-700 mb-3 flex items-center gap-2">
                 <div className="w-2 h-2 rounded-full bg-slate-400"></div> Ide
@@ -517,7 +569,6 @@ export default function App() {
               </button>
             </div>
 
-            {/* Scheduled / In Progress */}
             <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200 border-l-4 border-l-orange-400">
               <h3 className="font-bold text-slate-700 mb-3 flex items-center gap-2">
                 <div className="w-2 h-2 rounded-full bg-orange-400"></div>{" "}
@@ -541,7 +592,6 @@ export default function App() {
               </div>
             </div>
 
-            {/* Completed */}
             <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200 border-l-4 border-l-green-500">
               <h3 className="font-bold text-slate-700 mb-3 flex items-center gap-2">
                 <div className="w-2 h-2 rounded-full bg-green-500"></div>{" "}
@@ -566,7 +616,6 @@ export default function App() {
 
       {/* MAIN CONTENT AREA */}
       <div className="flex-1 flex flex-col min-w-0 bg-slate-50 relative">
-        {/* Topbar */}
         <div className="h-20 bg-white border-b border-slate-200 flex items-center justify-between px-8 shrink-0 z-10 shadow-sm">
           {activeTab === "calendar" && (
             <div className="flex items-center gap-6 w-full">
@@ -613,7 +662,7 @@ export default function App() {
           )}
         </div>
 
-        {/* TAB 1: CALENDAR VIEW */}
+        {/* TAB 1: CALENDAR */}
         {activeTab === "calendar" && (
           <div className="flex-1 overflow-y-auto p-6 bg-slate-50/80">
             {calendarView === "semester" ? (
@@ -674,7 +723,6 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* Catatan Bulan Ini */}
                 {calendarView === "month" && (
                   <div className="bg-white rounded-3xl shadow-sm border border-slate-200 p-6 shrink-0 mb-10">
                     <h3 className="font-bold text-[#011f3f] mb-3 flex items-center gap-2">
@@ -711,7 +759,7 @@ export default function App() {
           </div>
         )}
 
-        {/* TAB 2: PROGRESS ANALYTICS */}
+        {/* TAB 2: PROGRESS */}
         {activeTab === "progress" &&
           (() => {
             const stats = {
@@ -965,7 +1013,181 @@ export default function App() {
         )}
       </div>
 
-      {/* MODAL FORM IDE KONTEN */}
+      {/* --- MODAL VIEW MODE (READ ONLY) --- */}
+      {viewingContent && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white w-full max-w-3xl rounded-[2.5rem] shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+            {/* Header */}
+            <div className="bg-[#011f3f] px-8 py-6 flex justify-between items-center text-white border-b-4 border-[#c79d3a]">
+              <h2 className="text-2xl font-black flex items-center gap-3">
+                <div className="bg-white/10 p-2 rounded-xl backdrop-blur-sm text-[#c79d3a]">
+                  <AlignLeft className="w-6 h-6" />
+                </div>
+                Detail Ide Konten
+              </h2>
+              <button
+                onClick={() => setViewingContent(null)}
+                className="p-2 text-white/70 hover:text-white bg-white/10 hover:bg-white/20 rounded-xl transition-all"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="p-8 overflow-y-auto flex-1 space-y-6 bg-slate-50/50">
+              <div className="mb-4">
+                <h1 className="text-3xl font-black text-[#011f3f] mb-3">
+                  {viewingContent.title || "Tanpa Judul"}
+                </h1>
+                <div className="flex flex-wrap gap-3">
+                  <span
+                    className={`px-4 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider border ${
+                      viewingContent.status === "selesai"
+                        ? "bg-green-100 text-green-700 border-green-200"
+                        : viewingContent.status === "tunda"
+                          ? "bg-orange-100 text-orange-700 border-orange-200"
+                          : viewingContent.status === "batal"
+                            ? "bg-red-100 text-red-700 border-red-200"
+                            : "bg-slate-200 text-slate-700 border-slate-300"
+                    }`}
+                  >
+                    {viewingContent.status || "draft"}
+                  </span>
+                  {viewingContent.scheduledDate && (
+                    <span className="px-4 py-1.5 rounded-lg text-xs font-bold text-slate-600 border border-slate-300 bg-white flex items-center gap-2">
+                      <Calendar className="w-4 h-4" />{" "}
+                      {viewingContent.scheduledDate}
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* Tautan */}
+              {(viewingContent.referenceLink || viewingContent.liveUrl) && (
+                <div className="flex gap-4">
+                  {viewingContent.referenceLink && (
+                    <a
+                      href={viewingContent.referenceLink}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="flex items-center gap-2 text-sm font-bold text-[#c79d3a] hover:underline bg-white px-4 py-2 rounded-xl border border-slate-200 shadow-sm"
+                    >
+                      <Link2 className="w-4 h-4" /> Link Referensi
+                    </a>
+                  )}
+                  {viewingContent.liveUrl && (
+                    <a
+                      href={viewingContent.liveUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="flex items-center gap-2 text-sm font-bold text-green-600 hover:underline bg-green-50 px-4 py-2 rounded-xl border border-green-200 shadow-sm"
+                    >
+                      <ExternalLink className="w-4 h-4" /> Link Live / Source
+                    </a>
+                  )}
+                </div>
+              )}
+
+              {/* Tampilkan Gambar Jika Ada */}
+              {viewingContent.imageUrl && (
+                <div className="bg-white p-4 rounded-3xl border border-slate-200 shadow-sm">
+                  <h3 className="text-sm font-black text-[#011f3f] uppercase tracking-wider mb-4 border-b border-slate-100 pb-2">
+                    Gambar Referensi
+                  </h3>
+                  <img
+                    src={viewingContent.imageUrl}
+                    alt="Referensi"
+                    className="max-h-[300px] rounded-xl object-contain mx-auto"
+                  />
+                </div>
+              )}
+
+              {/* Tags / Kebutuhan Spesifik */}
+              <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
+                <h3 className="text-sm font-black text-[#011f3f] uppercase tracking-wider mb-4 border-b border-slate-100 pb-2">
+                  Kebutuhan Spesifik
+                </h3>
+                <div className="grid grid-cols-2 gap-4">
+                  {categories.map((cat) => {
+                    const selectedIds = viewingContent[`${cat.id}Ids`] || [];
+                    if (selectedIds.length === 0) return null;
+                    return (
+                      <div key={cat.id}>
+                        <label className="flex items-center gap-2 text-xs font-bold text-slate-500 mb-2">
+                          {cat.icon} {cat.title}
+                        </label>
+                        <div className="flex flex-wrap gap-2">
+                          {selectedIds.map((id: string) => {
+                            const item = masterData[cat.id]?.find(
+                              (m: any) => m.id === id,
+                            );
+                            if (!item) return null;
+                            return (
+                              <span
+                                key={id}
+                                className="px-3 py-1 bg-[#011f3f] text-[#c79d3a] rounded-lg text-xs font-bold shadow-sm"
+                              >
+                                {item.name}
+                              </span>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Script */}
+              {viewingContent.script && (
+                <div>
+                  <label className="block text-sm font-black text-[#011f3f] uppercase tracking-wider mb-2">
+                    Script / Caption
+                  </label>
+                  <div className="w-full bg-white border border-slate-200 rounded-2xl p-5 text-sm leading-relaxed font-medium text-slate-700 shadow-sm whitespace-pre-wrap">
+                    {viewingContent.script}
+                  </div>
+                </div>
+              )}
+
+              {/* Notes */}
+              {viewingContent.notes && (
+                <div>
+                  <label className="block text-sm font-black text-[#011f3f] uppercase tracking-wider mb-2">
+                    Catatan Tambahan (Notes)
+                  </label>
+                  <div className="w-full bg-white border border-slate-200 rounded-2xl p-5 text-sm leading-relaxed font-medium text-slate-700 shadow-sm whitespace-pre-wrap">
+                    {viewingContent.notes}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="p-6 bg-white border-t border-slate-100 flex justify-end gap-4 shrink-0">
+              <button
+                onClick={() => setViewingContent(null)}
+                className="px-6 py-3 rounded-xl font-bold text-slate-500 hover:bg-slate-100 transition-colors"
+              >
+                Tutup
+              </button>
+              <button
+                onClick={() => {
+                  const contentToEdit = viewingContent;
+                  setViewingContent(null);
+                  setEditingContent(contentToEdit);
+                  setIsModalOpen(true);
+                }}
+                className="px-8 py-3 bg-[#011f3f] hover:bg-[#011f3f]/90 text-[#c79d3a] rounded-xl font-black shadow-xl shadow-[#011f3f]/20 transition-all active:scale-95 flex items-center gap-2"
+              >
+                <Edit2 className="w-5 h-5" /> Edit Konten
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* --- MODAL FORM IDE KONTEN (EDIT/BUAT BARU) --- */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-white w-full max-w-3xl rounded-[2.5rem] shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
@@ -1014,24 +1236,65 @@ export default function App() {
                 />
               </div>
 
-              {/* Row 1.5: Reference Link */}
-              <div>
-                <label className="flex items-center gap-2 text-sm font-black text-[#011f3f] uppercase tracking-wider mb-2">
-                  <Link2 className="w-4 h-4 text-[#c79d3a]" /> Link Referensi
-                </label>
-                <input
-                  type="url"
-                  className="w-full bg-white border border-slate-300 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-[#c79d3a] font-medium text-slate-700 shadow-sm placeholder:text-slate-300"
-                  placeholder="Contoh: https://tiktok.com/@referensi_ide_konten"
-                  value={editingContent?.referenceLink || ""}
-                  onChange={(e) =>
-                    setEditingContent({
-                      ...editingContent,
-                      referenceLink: e.target.value,
-                    })
-                  }
-                />
+              {/* Row 1.5: Reference Links & Image Upload */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <label className="flex items-center gap-2 text-sm font-black text-[#011f3f] uppercase tracking-wider mb-2">
+                    <Link2 className="w-4 h-4 text-[#c79d3a]" /> Link Referensi
+                  </label>
+                  <input
+                    type="url"
+                    className="w-full bg-white border border-slate-300 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-[#c79d3a] font-medium text-slate-700 shadow-sm placeholder:text-slate-300"
+                    placeholder="Contoh: https://tiktok.com/@referensi"
+                    value={editingContent?.referenceLink || ""}
+                    onChange={(e) =>
+                      setEditingContent({
+                        ...editingContent,
+                        referenceLink: e.target.value,
+                      })
+                    }
+                  />
+                </div>
+                <div>
+                  <label className="flex items-center gap-2 text-sm font-black text-[#011f3f] uppercase tracking-wider mb-2">
+                    <ImageIcon className="w-4 h-4 text-[#c79d3a]" /> Upload
+                    Gambar
+                  </label>
+                  <label className="flex items-center justify-center w-full bg-slate-50 border-2 border-dashed border-slate-300 rounded-xl px-4 py-2 cursor-pointer hover:bg-slate-100 hover:border-[#c79d3a] transition-colors">
+                    <div className="flex items-center gap-2 text-sm font-bold text-slate-500">
+                      <UploadCloud className="w-5 h-5" />{" "}
+                      {editingContent?.imageUrl
+                        ? "Ganti Gambar"
+                        : "Pilih File Gambar"}
+                    </div>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={handleImageUpload}
+                    />
+                  </label>
+                </div>
               </div>
+
+              {/* Tampilkan Preview Gambar Saat Edit */}
+              {editingContent?.imageUrl && (
+                <div className="relative inline-block mt-2">
+                  <img
+                    src={editingContent.imageUrl}
+                    alt="Preview"
+                    className="h-32 rounded-lg border border-slate-200 shadow-sm object-contain"
+                  />
+                  <button
+                    onClick={() =>
+                      setEditingContent({ ...editingContent, imageUrl: null })
+                    }
+                    className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 shadow-md hover:bg-red-600 transition-colors"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              )}
 
               {/* Conditional Row: Live Link */}
               {editingContent?.status === "selesai" && (
