@@ -168,42 +168,56 @@ export default function App() {
     };
   }, []);
 
-  // FUNGSI KOMPRESI & UPLOAD GAMBAR
+  // FUNGSI MULTI UPLOAD & KOMPRESI (Maksimal 10 Gambar)
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
 
-    const reader = new FileReader();
-    reader.onload = (event: any) => {
-      const img = new Image();
-      img.onload = () => {
-        const canvas = document.createElement("canvas");
-        let width = img.width;
-        let height = img.height;
-        const MAX_DIMENSION = 800; // Kompresi agar database tidak berat
+    const currentImages = editingContent?.imageUrls || [];
 
-        if (width > height && width > MAX_DIMENSION) {
-          height *= MAX_DIMENSION / width;
-          width = MAX_DIMENSION;
-        } else if (height > MAX_DIMENSION) {
-          width *= MAX_DIMENSION / height;
-          height = MAX_DIMENSION;
-        }
+    if (currentImages.length + files.length > 10) {
+      alert(
+        `Maksimal hanya 10 gambar. Anda mencoba memasukkan total ${currentImages.length + files.length} gambar.`,
+      );
+      return;
+    }
 
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext("2d");
-        ctx?.drawImage(img, 0, 0, width, height);
+    files.forEach((file) => {
+      const reader = new FileReader();
+      reader.onload = (event: any) => {
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement("canvas");
+          let width = img.width;
+          let height = img.height;
+          // Kompresi ekstra agar 10 gambar muat di 1 dokumen Firestore (1MB limit)
+          const MAX_DIMENSION = 600;
 
-        const compressedBase64 = canvas.toDataURL("image/jpeg", 0.7);
-        setEditingContent((prev: any) => ({
-          ...prev,
-          imageUrl: compressedBase64,
-        }));
+          if (width > height && width > MAX_DIMENSION) {
+            height *= MAX_DIMENSION / width;
+            width = MAX_DIMENSION;
+          } else if (height > MAX_DIMENSION) {
+            width *= MAX_DIMENSION / height;
+            height = MAX_DIMENSION;
+          }
+
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext("2d");
+          ctx?.drawImage(img, 0, 0, width, height);
+
+          // Kualitas diturunkan jadi 0.6 agar lebih ringan untuk 10 gambar
+          const compressedBase64 = canvas.toDataURL("image/jpeg", 0.6);
+
+          setEditingContent((prev: any) => {
+            const newUrls = [...(prev.imageUrls || []), compressedBase64];
+            return { ...prev, imageUrls: newUrls };
+          });
+        };
+        img.src = event.target.result;
       };
-      img.src = event.target.result;
-    };
-    reader.readAsDataURL(file);
+      reader.readAsDataURL(file);
+    });
   };
 
   const handleSaveContent = async (content: any) => {
@@ -322,6 +336,7 @@ export default function App() {
       ? masterData.pillar.find((p: any) => p.id === c.pillarIds[0])
       : null;
     const cardBorderColor = pillarData ? pillarData.color : "#e2e8f0";
+    const imageCount = c.imageUrls ? c.imageUrls.length : 0;
 
     return (
       <div
@@ -335,11 +350,13 @@ export default function App() {
         <div className="flex justify-between items-start mb-1">
           <h4 className="font-bold text-[#011f3f] truncate pr-12 flex items-center gap-1.5">
             {c.title || "Untitled"}
-            {c.imageUrl && (
-              <ImageIcon
-                className="w-3.5 h-3.5 text-blue-500 shrink-0"
-                title="Ada Gambar Referensi"
-              />
+            {imageCount > 0 && (
+              <div
+                className="flex items-center gap-0.5 text-blue-500 bg-blue-50 px-1.5 py-0.5 rounded text-[10px] shrink-0"
+                title={`${imageCount} Gambar Referensi`}
+              >
+                <ImageIcon className="w-3 h-3" /> {imageCount}
+              </div>
             )}
           </h4>
           <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-all bg-white shadow-sm rounded-md border border-slate-100">
@@ -500,7 +517,6 @@ export default function App() {
     <div className="flex h-screen bg-slate-50 font-sans text-slate-800 overflow-hidden selection:bg-[#c79d3a] selection:text-[#011f3f]">
       {/* SIDEBAR NAVIGATION & WORKFLOW */}
       <div className="w-[360px] bg-white border-r border-slate-200 flex flex-col z-20 shadow-2xl flex-shrink-0">
-        {/* Brand Area */}
         <div className="p-6 pb-6 bg-[#011f3f] text-white shadow-lg relative overflow-hidden">
           <div className="absolute top-0 right-0 w-32 h-32 bg-white/5 rounded-full blur-2xl -mr-10 -mt-10 pointer-events-none"></div>
           <h1 className="text-2xl font-black tracking-tight flex items-center gap-3 mb-8 px-2 relative z-10">
@@ -538,7 +554,6 @@ export default function App() {
           </nav>
         </div>
 
-        {/* Workflow Containers */}
         {activeTab === "calendar" && (
           <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-50/50">
             <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
@@ -560,7 +575,7 @@ export default function App() {
               </div>
               <button
                 onClick={() => {
-                  setEditingContent({ status: "draft" });
+                  setEditingContent({ status: "draft", imageUrls: [] });
                   setIsModalOpen(true);
                 }}
                 className="mt-3 w-full py-2 bg-slate-50 text-[#011f3f] border border-slate-200 rounded-xl font-bold text-sm hover:bg-[#011f3f] hover:text-white transition-colors flex justify-center items-center gap-2"
@@ -1088,19 +1103,30 @@ export default function App() {
                 </div>
               )}
 
-              {/* Tampilkan Gambar Jika Ada */}
-              {viewingContent.imageUrl && (
-                <div className="bg-white p-4 rounded-3xl border border-slate-200 shadow-sm">
-                  <h3 className="text-sm font-black text-[#011f3f] uppercase tracking-wider mb-4 border-b border-slate-100 pb-2">
-                    Gambar Referensi
-                  </h3>
-                  <img
-                    src={viewingContent.imageUrl}
-                    alt="Referensi"
-                    className="max-h-[300px] rounded-xl object-contain mx-auto"
-                  />
-                </div>
-              )}
+              {/* GALERI GAMBAR REFERENSI */}
+              {viewingContent.imageUrls &&
+                viewingContent.imageUrls.length > 0 && (
+                  <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
+                    <h3 className="text-sm font-black text-[#011f3f] uppercase tracking-wider mb-4 border-b border-slate-100 pb-2 flex items-center justify-between">
+                      <span>Gambar Referensi</span>
+                      <span className="text-xs bg-[#c79d3a] text-white px-2 py-0.5 rounded-full">
+                        {viewingContent.imageUrls.length} Gambar
+                      </span>
+                    </h3>
+                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                      {viewingContent.imageUrls.map(
+                        (url: string, idx: number) => (
+                          <img
+                            key={idx}
+                            src={url}
+                            alt={`Referensi ${idx + 1}`}
+                            className="w-full h-32 object-cover rounded-xl border border-slate-200 shadow-sm hover:scale-105 transition-transform"
+                          />
+                        ),
+                      )}
+                    </div>
+                  </div>
+                )}
 
               {/* Tags / Kebutuhan Spesifik */}
               <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
@@ -1236,7 +1262,7 @@ export default function App() {
                 />
               </div>
 
-              {/* Row 1.5: Reference Links & Image Upload */}
+              {/* Row 1.5: Reference Links & MULTI Image Upload */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
                   <label className="flex items-center gap-2 text-sm font-black text-[#011f3f] uppercase tracking-wider mb-2">
@@ -1256,20 +1282,23 @@ export default function App() {
                   />
                 </div>
                 <div>
-                  <label className="flex items-center gap-2 text-sm font-black text-[#011f3f] uppercase tracking-wider mb-2">
-                    <ImageIcon className="w-4 h-4 text-[#c79d3a]" /> Upload
-                    Gambar
+                  <label className="flex items-center justify-between text-sm font-black text-[#011f3f] uppercase tracking-wider mb-2">
+                    <span className="flex items-center gap-2">
+                      <ImageIcon className="w-4 h-4 text-[#c79d3a]" /> Upload
+                      Referensi
+                    </span>
+                    <span className="text-[10px] bg-slate-200 text-slate-600 px-2 py-0.5 rounded-full">
+                      {editingContent?.imageUrls?.length || 0}/10
+                    </span>
                   </label>
                   <label className="flex items-center justify-center w-full bg-slate-50 border-2 border-dashed border-slate-300 rounded-xl px-4 py-2 cursor-pointer hover:bg-slate-100 hover:border-[#c79d3a] transition-colors">
                     <div className="flex items-center gap-2 text-sm font-bold text-slate-500">
-                      <UploadCloud className="w-5 h-5" />{" "}
-                      {editingContent?.imageUrl
-                        ? "Ganti Gambar"
-                        : "Pilih File Gambar"}
+                      <UploadCloud className="w-5 h-5" /> Pilih Hingga 10 Gambar
                     </div>
                     <input
                       type="file"
                       accept="image/*"
+                      multiple
                       className="hidden"
                       onChange={handleImageUpload}
                     />
@@ -1277,24 +1306,38 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Tampilkan Preview Gambar Saat Edit */}
-              {editingContent?.imageUrl && (
-                <div className="relative inline-block mt-2">
-                  <img
-                    src={editingContent.imageUrl}
-                    alt="Preview"
-                    className="h-32 rounded-lg border border-slate-200 shadow-sm object-contain"
-                  />
-                  <button
-                    onClick={() =>
-                      setEditingContent({ ...editingContent, imageUrl: null })
-                    }
-                    className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 shadow-md hover:bg-red-600 transition-colors"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                </div>
-              )}
+              {/* GRID PREVIEW GAMBAR SAAT EDIT */}
+              {editingContent?.imageUrls &&
+                editingContent.imageUrls.length > 0 && (
+                  <div className="flex flex-wrap gap-4 mt-2">
+                    {editingContent.imageUrls.map(
+                      (url: string, idx: number) => (
+                        <div key={idx} className="relative inline-block group">
+                          <img
+                            src={url}
+                            alt={`Preview ${idx}`}
+                            className="h-24 w-24 object-cover rounded-xl border border-slate-200 shadow-sm group-hover:opacity-75 transition-opacity"
+                          />
+                          <button
+                            onClick={() => {
+                              const newUrls = editingContent.imageUrls.filter(
+                                (_: any, i: number) => i !== idx,
+                              );
+                              setEditingContent({
+                                ...editingContent,
+                                imageUrls: newUrls,
+                              });
+                            }}
+                            className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1.5 shadow-md hover:bg-red-600 transition-transform hover:scale-110"
+                            title="Hapus gambar ini"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </div>
+                      ),
+                    )}
+                  </div>
+                )}
 
               {/* Conditional Row: Live Link */}
               {editingContent?.status === "selesai" && (
